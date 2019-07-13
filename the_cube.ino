@@ -17,7 +17,7 @@
 #include "pwm_dimmer.h"
 #include "cube_wiring.h"
 
-uint8_t display_mem[SIZE_X][SIZE_Y][SIZE_Z];  
+uint8_t display_mem[SIZE_Z][SIZE_Y][SIZE_X];  
 MPU6050 mpu6050(Wire);
 
 static uint8_t tlc5940_buf[24*SIZE_TLC5940];
@@ -159,11 +159,11 @@ ISR(TIMER1_COMPA_vect) {
   /* Timing experience, all for 8x8x8 cube using 4 TLCs, in microseconds:
    * Original code (using PROGMEM):       385
    * Using SRAM instead of PROGMEM:       350
+   * Without the upfront memset:          320
    */
-  memset(tlc5940_buf, 0, 24*SIZE_TLC5940);
   for(uint8_t x = 0; x < SIZE_X; x++) {
     for(uint8_t y = 0; y < SIZE_Y; y++) {
-      uint16_t intensity_pwm = dimmer_values[display_mem[x][y][z]];
+      uint16_t intensity_pwm = dimmer_values[display_mem[z][y][x]];
       uint16_t led_index = y * SIZE_X + x;
       uint16_t led_index_half = led_index / 2;
       uint8_t led_index_parity = led_index % 2;

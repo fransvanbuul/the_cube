@@ -15,7 +15,7 @@
 #error Not enough TCL5940s
 #endif
 
-extern uint8_t display_mem[SIZE_X][SIZE_Y][SIZE_Z];  
+extern uint8_t display_mem[SIZE_Z][SIZE_Y][SIZE_X];  
 extern MPU6050 mpu6050;
 
 class Vector: public Printable {
@@ -23,7 +23,7 @@ public:
   int8_t x, y, z;
   Vector(int8_t x0 = 0, int8_t y0 = 0, int8_t z0 = 0) { x = x0; y = y0; z = z0; }
   Vector(const Vector& v) { x = v.x; y = v.y; z = v.z; }
-  void pset(uint8_t value) const { display_mem[x][y][z] = value; }
+  void pset(uint8_t value) const { display_mem[z][y][x] = value; }
   bool isInCube() const { return x >= 0 && y >= 0 && z >= 0 && x < SIZE_X && y < SIZE_Y && z < SIZE_Z; }
 
   bool operator==(const Vector& v) const { return x == v.x && y == v.y && z == v.z; }
@@ -49,9 +49,7 @@ public:
   }
 };
 
-void snake_loop();
 void snake3d_loop();
-void test_loop();
 void liquid_loop();
 
 #endif // CUBE_SHARED_H
