@@ -2,9 +2,8 @@
 
 #define DIMMER_STEPS 256
 
-/* Please note that this is architecture dependent; works on the low-endian arch of AVR */
-#define low8(x)  (*((uint8_t*)&(x)+0))
-#define high8(x) (*((uint8_t*)&(x)+1))
+#define low8(x)  (uint8_t)(x & 0xFF)
+#define high8(x)  (uint8_t)(x >> 8)
 
 const uint16_t dimmer_values[DIMMER_STEPS] = {
     0, 4, 6, 7, 9, 11, 12, 14, 15, 17,

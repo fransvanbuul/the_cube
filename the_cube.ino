@@ -92,8 +92,8 @@ void setup() {
    * - Waveform generation mode 0 (normal), we'll clear the counter in the interrupt handler.
    * - No output.
    * - Interrupt on compare with OCR1A; we'll count to PWM_COUNT. Resulting timings:
-   *      - one layer will be displayed for 2048 microseconds. We need about 516 microseconds
-   *        to do the display work, leaving about 75% of processing capacity for doing fun stuff
+   *      - one layer will be displayed for 2048 microseconds. We need about 280 microseconds
+   *        to do the display work, leaving about 86% of processing capacity for doing fun stuff
    *      - refresh frequency for the entire cube will be 61 Hz, which is still nice.
    */
   TCNT1  = 0;
@@ -157,39 +157,34 @@ ISR(TIMER1_COMPA_vect) {
   pin_high(DIAG_PORT, DIAG_PIN);
   /* Fill new data buffer for layer 'z' - one higher than what we're displaying. */
   /* Timing experience, all for 8x8x8 cube using 4 TLCs, in microseconds:
-   * Original code (using PROGMEM):       385
-   * Using SRAM instead of PROGMEM:       350
-   * Without the upfront memset:          320
+   * Original code (using PROGMEM):              385
+   * Using SRAM instead of PROGMEM:              350
+   * Without the upfront memset:                 320
+   * Direct pointer arithmetic (this version):   134
    */
-  for(uint8_t x = 0; x < SIZE_X; x++) {
-    for(uint8_t y = 0; y < SIZE_Y; y++) {
-      uint16_t intensity_pwm = dimmer_values[display_mem[z][y][x]];
-      uint16_t led_index = y * SIZE_X + x;
-      uint16_t led_index_half = led_index / 2;
-      uint8_t led_index_parity = led_index % 2;
-      if(led_index_parity == 0) {
-        uint8_t idx_lower8 = SIZE_TLC5940 * 24 - 1 - led_index_half*3;
-        uint8_t idx_upper4 = idx_lower8 - 1;
-        uint8_t bits_lower8 = intensity_pwm & 0xFF;
-        uint8_t bits_upper4 = intensity_pwm >> 8; 
-        tlc5940_buf[idx_lower8] = bits_lower8;
-        tlc5940_buf[idx_upper4] = (tlc5940_buf[idx_upper4] & 0xF0) | bits_upper4;
-      } else {
-        uint8_t idx_lower4 = SIZE_TLC5940 * 24 - 1 - led_index_half*3 - 1;
-        uint8_t idx_upper8 = idx_lower4 - 1;
-        uint8_t bits_lower4 = (intensity_pwm & 0x0F) << 4;
-        uint8_t bits_upper8 = intensity_pwm >> 4;
-        tlc5940_buf[idx_lower4] = (tlc5940_buf[idx_lower4] & 0x0F) | bits_lower4;
-        tlc5940_buf[idx_upper8] = bits_upper8;
-      }
-    }
+  uint8_t* display_mem_ptr = &(display_mem[z][0][0]);
+  uint8_t* display_mem_ptr_top = &(display_mem[z+1][0][0]);
+  uint8_t* tlc5940_buf_ptr = &(tlc5940_buf[24*SIZE_TLC5940]);
+  uint8_t* tlc5940_buf_bottom = &(tlc5940_buf[0]);
+  uint16_t intensity_a, intensity_b_shifted;
+  while(tlc5940_buf_ptr != tlc5940_buf_bottom) {
+    intensity_a = (display_mem_ptr < display_mem_ptr_top) ? dimmer_values[*display_mem_ptr] : 0x0000;
+    display_mem_ptr++;
+    intensity_b_shifted = (display_mem_ptr < display_mem_ptr_top) ? (dimmer_values[*display_mem_ptr] << 4) : 0x0000;
+    display_mem_ptr++;
+    tlc5940_buf_ptr--;
+    *tlc5940_buf_ptr = low8(intensity_a);
+    tlc5940_buf_ptr--;
+    *tlc5940_buf_ptr = high8(intensity_a) | low8(intensity_b_shifted);
+    tlc5940_buf_ptr--;
+    *tlc5940_buf_ptr = high8(intensity_b_shifted);
   }
-  pin_low(DIAG_PORT, DIAG_PIN);
 
   /* Send the data to the TLCs. On an 8x8 cube with 4 TLCs, this takes 130 microseconds. */
   SPI.beginTransaction(SPISettings(30000000, MSBFIRST, SPI_MODE0));
   SPI.transfer(tlc5940_buf, 24*SIZE_TLC5940);
   SPI.endTransaction();
+  pin_low(DIAG_PORT, DIAG_PIN);
 }
 
 void loop() {

@@ -6,10 +6,10 @@
 #include <stdint.h>
 #include <MPU6050_tockn.h>
 
-#define SIZE_X               8
-#define SIZE_Y               8
-#define SIZE_Z               8
-#define SIZE_TLC5940         4
+#define SIZE_X               3
+#define SIZE_Y               3
+#define SIZE_Z               3
+#define SIZE_TLC5940         1
 
 #if (SIZE_X*SIZE_Y) > (SIZE_TLC5940*16)
 #error Not enough TCL5940s
@@ -51,5 +51,6 @@ public:
 
 void snake3d_loop();
 void liquid_loop();
+void test_loop();
 
 #endif // CUBE_SHARED_H
