@@ -11,7 +11,6 @@
  */
 
 #include <SPI.h>
-#include <MPU6050_tockn.h>
 #include <Wire.h>
 
 #include "cube_shared.h"
@@ -19,8 +18,8 @@
 #include "cube_wiring.h"
 
 uint8_t display_mem[SIZE_X][SIZE_Y][SIZE_Z];  
+MPU6050 mpu6050(Wire);
 
-static MPU6050 mpu6050(Wire);
 static uint8_t tlc5940_buf[24*SIZE_TLC5940];
 
 void setup() {
@@ -190,5 +189,5 @@ ISR(TIMER1_COMPA_vect) {
 }
 
 void loop() {
-  snake3d_loop();
+  liquid_loop();
 }

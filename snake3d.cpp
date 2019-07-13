@@ -1,6 +1,6 @@
 #include "cube_shared.h"
 
-static Point points[4];
+static Vector points[4];
 static void snake3d_nextimage();
 static void snake3d_delay();
   
@@ -12,14 +12,14 @@ void snake3d_loop() {
 static void snake3d_nextimage() {
   bool done = false;
   while(!done) {
-    Point candidate(points[0]);
+    Vector candidate(points[0]);
     switch(random(6)) {
-      case 0: candidate.add(-1,  0,  0); break;
-      case 1: candidate.add(+1,  0,  0); break;
-      case 2: candidate.add( 0, -1,  0); break;
-      case 3: candidate.add( 0, +1,  0); break;
-      case 4: candidate.add( 0,  0, -1); break;
-      case 5: candidate.add( 0,  0, +1); break;
+      case 0: candidate += Vector(-1,  0,  0); break;
+      case 1: candidate += Vector(+1,  0,  0); break;
+      case 2: candidate += Vector( 0, -1,  0); break;
+      case 3: candidate += Vector( 0, +1,  0); break;
+      case 4: candidate += Vector( 0,  0, -1); break;
+      case 5: candidate += Vector( 0,  0, +1); break;
     }
     if(candidate.isInCube() && candidate != points[1] && candidate != points[2] && candidate != points[3]) {
       done = true;
