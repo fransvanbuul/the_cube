@@ -1,85 +1,52 @@
 /*
- * Approach 7.0
+ * LED cube
  * 
- * With real x/y/z/ graphics
+ * Basic set-up of the electronics
+ * - 8 x 8 x 8 cube, layers have common anode, columns have common cathode 
+ * - layers sourced from P-channel MOSFETs (IRF9520), driven directly from Arduino D2..D5 (2..5) and A0..A3 (14..17)
+ * - one layer is active at a time (multiplexing), 2 ms per layer, 61 Hz refresh frequency for the 8-layer cube
+ * - led intensity controlled through 4 TLC5940s, controlled through Arduino's hardware SPI
+ * - orientation information from a MPU-6050 on a GY-521 breakout board controlled through Arduino's hardware I2C
+ * 
  */
 
 #include <SPI.h>
+#include <MPU6050_tockn.h>
+#include <Wire.h>
 
 #include "pwm_dimmer.h"
-
-#define SIZE_X               8
-#define SIZE_Y               8
-#define SIZE_Z               8
-#define SIZE_TLC5940         4
-
-#if (SIZE_X*SIZE_Y) > (SIZE_TLC5940*16)
-#error Not enough TCL5940s
-#endif
-
-#define GSCLK                6
-#define DIAG                 7
-#define DIAG_PORT            PORTD
-#define DIAG_PIN             PD7
-#define XLAT                 8
-#define XLAT_PORT            PORTB
-#define XLAT_PIN             PB0
-#define BLANK                9
-#define BLANK_PORT           PORTB
-#define BLANK_PIN            PB1
-#define VPRG                 10
-#define VPRG_PORT            PORTB
-#define VPRG_PIN             PB2
-
-#define LAYER_0              2
-#define LAYER_0_PORT         PORTD
-#define LAYER_0_PIN          PD2
-#define LAYER_1              3
-#define LAYER_1_PORT         PORTD
-#define LAYER_1_PIN          PD3
-#define LAYER_2              4
-#define LAYER_2_PORT         PORTD
-#define LAYER_2_PIN          PD4
-#define LAYER_3              5
-#define LAYER_3_PORT         PORTD
-#define LAYER_3_PIN          PD5
-#define LAYER_4              14
-#define LAYER_4_PORT         PORTC
-#define LAYER_4_PIN          PC0
-#define LAYER_5              15
-#define LAYER_5_PORT         PORTC
-#define LAYER_5_PIN          PC1
-#define LAYER_6              16
-#define LAYER_6_PORT         PORTC
-#define LAYER_6_PIN          PC2
-#define LAYER_7              17
-#define LAYER_7_PORT         PORTC
-#define LAYER_7_PIN          PC3
+#include "cube_wiring.h"
+#include "animation.h"
+#include "snake.h"
 
 #define pin_high(port, pin)  port |= _BV(pin)
 #define pin_low(port, pin)   port &= ~_BV(pin)
-
 #define PWM_COUNT            4096
 
+MPU6050 mpu6050(Wire);
+
 volatile uint8_t z = 0;
-volatile uint8_t display_mem[SIZE_X][SIZE_Y][SIZE_Z];  
-volatile uint8_t tlc5940_buf[24*SIZE_TLC5940];
 volatile boolean vsync = false; 
+
+uint8_t display_mem[SIZE_X][SIZE_Y][SIZE_Z];  
+uint8_t tlc5940_buf[24*SIZE_TLC5940];
+
+Animation* animation = new Snake();
 
 void setup() {
 
   /* Suspending all interrupts. */
   cli();
-
-  /* Clearing our display memory. */
-  memset(display_mem, 0, SIZE_X*SIZE_Y*SIZE_Z);
   
-  /* Stopping timer/counter0:1 */
+  /* Stopping all timers. */
   GTCCR |= _BV(TSM);
   GTCCR |= _BV(PSRASY) | _BV(PSRSYNC);
+  
+  /* Clearing our display memory. */
+  memset(display_mem, 0, SIZE_X*SIZE_Y*SIZE_Z);
 
   /* Output pin configuration.
-   * - The GSCLK pin will be driven by timer/counter0   
+   * - The GSCLK pin will be driven by timer/counter2
    * - The XLAT pin will be driven by the timer/counter1 interrupt handler
    * - The BLANK pin will be driven by the timer/counter1 interrupt handler
    * - The LAYER_x pins will be driven by the timer/counter1 interrupt handler
@@ -110,7 +77,7 @@ void setup() {
   pinMode(LAYER_6, OUTPUT);
   pinMode(LAYER_7, OUTPUT);
 
-  /* Enabling SPI */
+  /* Enabling SPI for the TLC5940 */
   SPI.begin();
 
   /* Loading the TLC5940 Dot Correction registers with all ones to enable maximum current.
@@ -131,19 +98,7 @@ void setup() {
   pin_high(XLAT_PORT, XLAT_PIN);
   pin_low(XLAT_PORT, XLAT_PIN); 
 
-  /* timer/counter0 config:
-   * - Clock source is clkIO/1 (no prescaling so we get a 16 MHz input)
-   * - Waveform generation mode 7 (fast PWM) with TOP value (in OCR0A) of 3.
-   * - Output on pin OC0A (digital 6) in toggle mode, providing a 16 MHz / 2 / (3 + 1) = 2 MHz signal.
-   * - No interrupts.
-   */
-  TCNT0  = 0;
-  TCCR0A = _BV(COM0A0) | _BV(WGM01) | _BV(WGM00);
-  TCCR0B = _BV(WGM02) | _BV(CS00);
-  OCR0A  = 3;
-  TIMSK0 = 0;
-  
-  /* timer/counter1 config:
+  /* timer/counter1 config (powering XLAT/BLANK)
    * - Clock source is clkIO/8 (with this prescaling we get a 16/8 = 2 MHz input)
    * - Waveform generation mode 0 (normal), we'll clear the counter in the interrupt handler.
    * - No output.
@@ -158,12 +113,34 @@ void setup() {
   OCR1A  = PWM_COUNT;
   TIMSK1 = _BV(OCIE1A);
 
-  /* Starting timer/counter0:1 */
+  /* timer/counter2 config (powering GSCLK on the TLC5940)
+   * - Clock source is clkIO/1 (no prescaling so we get a 16 MHz input)
+   * - Waveform generation mode 2 (Clear Timer on Compare Match / CTC) with TOP value (in OCR2A) of 3.
+   * - Output on pin OC2B (digital 3) in toggle mode, providing a 16 MHz / 2 (toggle) / (3 + 1) = 2 MHz signal.
+   * - No interrupts.
+   */
+  TCNT2  = 0;
+  TCCR2A = _BV(COM2B0) | _BV(WGM21);
+  TCCR2B = _BV(CS20);
+  OCR2A  = 3;
+  TIMSK2 = 0;
+  
+  /* Starting timer/counters */
   GTCCR &= ~_BV(TSM);
   
   /* Allowing interrupts. */
   sei();
-  
+
+  /* Enabling serial comms for connection with PC */
+  Serial.begin(2000000);
+
+  /* Enabling I2C for the MPU-6050 */
+  Wire.begin();
+
+  /* Initialize the MPU-6050 */
+  mpu6050.begin();
+  mpu6050.calcGyroOffsets(true);
+  Serial.println();
 }
 
 ISR(TIMER1_COMPA_vect) {
@@ -223,48 +200,11 @@ ISR(TIMER1_COMPA_vect) {
 
 }
 
-uint8_t counter = 0;
-uint16_t counter_top = 20;
-
-void loop() {
-  while(!vsync);
+void wait_vsync() {
   vsync = false;
-  if(counter++ >= counter_top) {
-    counter = 0;
-    nextimage();
-  }
-  counter_top = 5 + analogRead(7)/8;
+  while(!vsync);
 }
 
-uint8_t pos0_x = 0, pos0_z = 0, pos1_x = 1, pos1_z = 0, pos2_x = 2, pos2_z = 0;
-
-void nextimage() {
-  boolean done = false;
-  while(!done) {
-    uint8_t candidate_x = pos0_x;
-    uint8_t candidate_z = pos0_z;
-    done = true;
-    switch(random(4)) {
-      case 0: candidate_x--; break;
-      case 1: candidate_x++; break;
-      case 2: candidate_z--; break;
-      case 3: candidate_z++; break;
-    }
-    if(candidate_x > 2 || candidate_z > 2) done = false;
-    if(candidate_x == pos1_x && candidate_z == pos1_z) done = false;
-    if(done) {
-      pos2_x = pos1_x;
-      pos2_z = pos1_z;
-      pos1_x = pos0_x;
-      pos1_z = pos0_z;
-      pos0_x = candidate_x;
-      pos0_z = candidate_z;
-    }
-  }
-    
-  memset(display_mem, 0, SIZE_X*SIZE_Y*SIZE_Z);
-  display_mem[pos0_x][0][pos0_z] = 255;
-  display_mem[pos1_x][0][pos1_z] = 127;
-  display_mem[pos2_x][0][pos2_z] = 63;
-
+void loop() {
+  animation->loop();
 }
