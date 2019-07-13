@@ -190,5 +190,5 @@ ISR(TIMER1_COMPA_vect) {
 }
 
 void loop() {
-  snake_loop();
+  snake3d_loop();
 }
