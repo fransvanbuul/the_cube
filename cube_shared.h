@@ -15,7 +15,7 @@
 
 extern uint8_t display_mem[SIZE_X][SIZE_Y][SIZE_Z];  
 
-void wait_vsync();
 void snake_loop();
+void test_loop();
 
 #endif // CUBE_SHARED_H

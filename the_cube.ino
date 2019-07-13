@@ -21,8 +21,6 @@
 uint8_t display_mem[SIZE_X][SIZE_Y][SIZE_Z];  
 
 static MPU6050 mpu6050(Wire);
-static uint8_t z = 0;
-static volatile boolean vsync = false; 
 static uint8_t tlc5940_buf[24*SIZE_TLC5940];
 
 void setup() {
@@ -136,6 +134,8 @@ void setup() {
 }
 
 ISR(TIMER1_COMPA_vect) {
+  static uint8_t z = 0;
+  
   /* Pulse BLANK. Within the BLANK pulse, switch z, pulse XLAT. We're now showing z 'z' */
   pin_high(BLANK_PORT, BLANK_PIN);
   switch(z) {
@@ -187,14 +187,6 @@ ISR(TIMER1_COMPA_vect) {
   SPI.transfer(tlc5940_buf, 24*SIZE_TLC5940);
   SPI.endTransaction();
   pin_low(DIAG_PORT, DIAG_PIN);
-
-  if(z == 7) vsync = true;
-
-}
-
-void wait_vsync() {
-  vsync = false;
-  while(!vsync);
 }
 
 void loop() {

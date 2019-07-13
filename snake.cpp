@@ -3,7 +3,7 @@
 static uint8_t pos0_x = 0, pos0_z = 0, pos1_x = 1, pos1_z = 0, pos2_x = 2, pos2_z = 0;
 static void snake_nextimage();
 static void snake_delay();
-
+  
 void snake_loop() {
   snake_nextimage();
   snake_delay();
@@ -33,7 +33,6 @@ static void snake_nextimage() {
     }
   }
     
-  wait_vsync();
   memset(display_mem, 0, SIZE_X*SIZE_Y*SIZE_Z);
   for(int y = 0; y < 3; y++) {
     display_mem[pos0_x][y][pos0_z] = 255;
@@ -53,6 +52,9 @@ static void snake_delay() {
       int delayMillis = (int)(1000.0/freq_desired);
       if(delayMillis > 500) delayMillis = 500;
       delay(delayMillis);
+    } else {
+      /* Needed to avoid 'overloading' the analog read */
+      delay(100);
     }
   }  
 }
