@@ -14,24 +14,16 @@
 #include <MPU6050_tockn.h>
 #include <Wire.h>
 
+#include "cube_shared.h"
 #include "pwm_dimmer.h"
 #include "cube_wiring.h"
-#include "animation.h"
-#include "snake.h"
-
-#define pin_high(port, pin)  port |= _BV(pin)
-#define pin_low(port, pin)   port &= ~_BV(pin)
-#define PWM_COUNT            4096
-
-MPU6050 mpu6050(Wire);
-
-volatile uint8_t z = 0;
-volatile boolean vsync = false; 
 
 uint8_t display_mem[SIZE_X][SIZE_Y][SIZE_Z];  
-uint8_t tlc5940_buf[24*SIZE_TLC5940];
 
-Animation* animation = new Snake();
+static MPU6050 mpu6050(Wire);
+static uint8_t z = 0;
+static volatile boolean vsync = false; 
+static uint8_t tlc5940_buf[24*SIZE_TLC5940];
 
 void setup() {
 
@@ -206,5 +198,5 @@ void wait_vsync() {
 }
 
 void loop() {
-  animation->loop();
+  snake_loop();
 }

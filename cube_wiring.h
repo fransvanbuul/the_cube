@@ -1,14 +1,9 @@
 #ifndef CUBE_WIRING_H
 #define CUBE_WIRING_H
 
-#define SIZE_X               3
-#define SIZE_Y               3
-#define SIZE_Z               8
-#define SIZE_TLC5940         1
-
-#if (SIZE_X*SIZE_Y) > (SIZE_TLC5940*16)
-#error Not enough TCL5940s
-#endif
+#define PWM_COUNT            4096
+#define pin_high(port, pin)  port |= _BV(pin)
+#define pin_low(port, pin)   port &= ~_BV(pin)
 
 #define GSCLK                3
 #define DIAG                 2
