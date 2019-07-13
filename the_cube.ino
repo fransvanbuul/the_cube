@@ -155,11 +155,15 @@ ISR(TIMER1_COMPA_vect) {
   TCNT1 = 0;
 
   pin_high(DIAG_PORT, DIAG_PIN);
-  /* Fill new data buffer for layer 'z' - one higher than what we're displaying. On an 8x8 cube, this part takes 385 microseconds. */
+  /* Fill new data buffer for layer 'z' - one higher than what we're displaying. */
+  /* Timing experience, all for 8x8x8 cube using 4 TLCs, in microseconds:
+   * Original code (using PROGMEM):       385
+   * Using SRAM instead of PROGMEM:       350
+   */
   memset(tlc5940_buf, 0, 24*SIZE_TLC5940);
   for(uint8_t x = 0; x < SIZE_X; x++) {
     for(uint8_t y = 0; y < SIZE_Y; y++) {
-      uint16_t intensity_pwm = pgm_read_word_near(dimmer_values + display_mem[x][y][z]);
+      uint16_t intensity_pwm = dimmer_values[display_mem[x][y][z]];
       uint16_t led_index = y * SIZE_X + x;
       uint16_t led_index_half = led_index / 2;
       uint8_t led_index_parity = led_index % 2;
@@ -180,14 +184,14 @@ ISR(TIMER1_COMPA_vect) {
       }
     }
   }
+  pin_low(DIAG_PORT, DIAG_PIN);
 
   /* Send the data to the TLCs. On an 8x8 cube with 4 TLCs, this takes 130 microseconds. */
   SPI.beginTransaction(SPISettings(30000000, MSBFIRST, SPI_MODE0));
   SPI.transfer(tlc5940_buf, 24*SIZE_TLC5940);
   SPI.endTransaction();
-  pin_low(DIAG_PORT, DIAG_PIN);
 }
 
 void loop() {
-  liquid_loop();
+  snake3d_loop();
 }
