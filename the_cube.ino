@@ -10,12 +10,13 @@
  * 
  */
 
-#include <SPI.h>
 #include <Wire.h>
 
 #include "cube_shared.h"
 #include "pwm_dimmer.h"
 #include "cube_wiring.h"
+
+extern void spi_send_byte(uint8_t) __asm__("spi_send_byte");
 
 uint8_t display_mem[SIZE_Z][SIZE_Y][SIZE_X];  
 MPU6050 mpu6050(Wire);
@@ -65,25 +66,23 @@ void setup() {
   pinMode(LAYER_7, OUTPUT);
 
   /* Enabling SPI for the TLC5940 */
-  SPI.begin();
+  pinMode(MOSI, OUTPUT);
+  pinMode(SCK, OUTPUT);
+  SPCR = _BV(SPE) | _BV(MSTR) | _BV(SPI2X);
 
   /* Loading the TLC5940 Dot Correction registers with all ones to enable maximum current.
    * With a 2k Iref resistor, this will give us 19,6 mA. */
-  SPI.beginTransaction(SPISettings(30000000, MSBFIRST, SPI_MODE0));
   for(int i = 0; i < 12*SIZE_TLC5940; i++) {
-    SPI.transfer(0xFF);
+    spi_send_byte(0xFF);
   }
-  SPI.endTransaction();
   pin_high(XLAT_PORT, XLAT_PIN);
   pin_low(XLAT_PORT, XLAT_PIN);  
   pin_low(VPRG_PORT, VPRG_PIN);
   
   /* Loading the TLC5940 Grayscale registers with all zeros to switch the LEDs off. */
-  SPI.beginTransaction(SPISettings(30000000, MSBFIRST, SPI_MODE0));
   for(int i = 0; i < 24*SIZE_TLC5940; i++) {
-    SPI.transfer(0x00);
+    spi_send_byte(0x00);
   }
-  SPI.endTransaction();
   pin_high(XLAT_PORT, XLAT_PIN);
   pin_low(XLAT_PORT, XLAT_PIN); 
 
@@ -174,7 +173,6 @@ ISR(TIMER1_COMPA_vect) {
  * Theoretical minimum, taking into account 8 MHz SPI speed:              96
  */
 static void send_data_to_tlc() {
-  SPI.beginTransaction(SPISettings(30000000, MSBFIRST, SPI_MODE0));
   uint8_t* display_mem_ptr = &(display_mem[z+1][0][0]);
   uint8_t  skip_led_count = 16*SIZE_TLC5940 - SIZE_X*SIZE_Y;
   uint8_t  tlc_triple_count = 8*SIZE_TLC5940;
@@ -183,32 +181,27 @@ static void send_data_to_tlc() {
     if(skip_led_count == 0) {
       // triple contains 2 leds
       intensity_a_shifted = dimmer_values[*(--display_mem_ptr)] << 4;
-      SPI.transfer(high8(intensity_a_shifted));
+      spi_send_byte(high8(intensity_a_shifted));
       intensity_b = dimmer_values[*(--display_mem_ptr)];
-      SPI.transfer(low8(intensity_a_shifted) | high8(intensity_b));
-      SPI.transfer(low8(intensity_b));
+      spi_send_byte(low8(intensity_a_shifted) | high8(intensity_b));
+      spi_send_byte(low8(intensity_b));
     } else {
       // triple contains 1 or 0 leds
-      SPI.transfer(0);
+      spi_send_byte(0);
       skip_led_count--;
       if(skip_led_count == 0) {
         // triple contains 1 led
         intensity_b = dimmer_values[*(--display_mem_ptr)];
-        SPI.transfer(high8(intensity_b));
-        SPI.transfer(low8(intensity_b));
+        spi_send_byte(high8(intensity_b));
+        spi_send_byte(low8(intensity_b));
       } else {
         // triple contains 0 leds
         skip_led_count--;
-        SPI.transfer(0);
-        SPI.transfer(0);
+        spi_send_byte(0);
+        spi_send_byte(0);
       }
     }
   }
-  SPI.endTransaction();
-}
-inline static void xtransfer(uint8_t data) {
-  while (!(SPSR & _BV(SPIF))) ; // wait
-  SPDR = data;
 }
 
 void loop() {
