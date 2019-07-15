@@ -170,6 +170,8 @@ ISR(TIMER1_COMPA_vect) {
  * Without the upfront memset:                 320             135       355
  * Direct pointer arithmetic in C:             134             135       269
  * Bufferless-sending in C:                                              211
+ * 
+ * Theoretical minimum, taking into account 8 MHz SPI speed:              96
  */
 static void send_data_to_tlc() {
   SPI.beginTransaction(SPISettings(30000000, MSBFIRST, SPI_MODE0));
