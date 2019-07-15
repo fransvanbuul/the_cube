@@ -20,8 +20,6 @@
 uint8_t display_mem[SIZE_Z][SIZE_Y][SIZE_X];  
 MPU6050 mpu6050(Wire);
 
-static uint8_t tlc5940_buf[24*SIZE_TLC5940];
-
 void setup() {
 
   /* Suspending all interrupts. */
@@ -71,18 +69,20 @@ void setup() {
 
   /* Loading the TLC5940 Dot Correction registers with all ones to enable maximum current.
    * With a 2k Iref resistor, this will give us 19,6 mA. */
-  memset(tlc5940_buf, 0xFF, 12*SIZE_TLC5940);
   SPI.beginTransaction(SPISettings(30000000, MSBFIRST, SPI_MODE0));
-  SPI.transfer(tlc5940_buf, 12*SIZE_TLC5940);
+  for(int i = 0; i < 12*SIZE_TLC5940; i++) {
+    SPI.transfer(0xFF);
+  }
   SPI.endTransaction();
   pin_high(XLAT_PORT, XLAT_PIN);
   pin_low(XLAT_PORT, XLAT_PIN);  
   pin_low(VPRG_PORT, VPRG_PIN);
   
   /* Loading the TLC5940 Grayscale registers with all zeros to switch the LEDs off. */
-  memset(tlc5940_buf, 0, 24*SIZE_TLC5940);
   SPI.beginTransaction(SPISettings(30000000, MSBFIRST, SPI_MODE0));
-  SPI.transfer(tlc5940_buf, 24*SIZE_TLC5940);
+  for(int i = 0; i < 24*SIZE_TLC5940; i++) {
+    SPI.transfer(0x00);
+  }
   SPI.endTransaction();
   pin_high(XLAT_PORT, XLAT_PIN);
   pin_low(XLAT_PORT, XLAT_PIN); 
@@ -132,8 +132,9 @@ void setup() {
   Serial.println();
 }
 
+static uint8_t z = 0;
+
 ISR(TIMER1_COMPA_vect) {
-  static uint8_t z = 0;
   
   /* Pulse BLANK. Within the BLANK pulse, switch z, pulse XLAT. We're now showing z 'z' */
   pin_high(BLANK_PORT, BLANK_PIN);
@@ -154,37 +155,58 @@ ISR(TIMER1_COMPA_vect) {
   /* Resetting timer/counter1 */
   TCNT1 = 0;
 
+  /* Sending the data for the next layer. */
   pin_high(DIAG_PORT, DIAG_PIN);
-  /* Fill new data buffer for layer 'z' - one higher than what we're displaying. */
-  /* Timing experience, all for 8x8x8 cube using 4 TLCs, in microseconds:
-   * Original code (using PROGMEM):              385
-   * Using SRAM instead of PROGMEM:              350
-   * Without the upfront memset:                 320
-   * Direct pointer arithmetic (this version):   134
-   */
-  uint8_t* display_mem_ptr = &(display_mem[z][0][0]);
-  uint8_t* display_mem_ptr_top = &(display_mem[z+1][0][0]);
-  uint8_t* tlc5940_buf_ptr = &(tlc5940_buf[24*SIZE_TLC5940]);
-  uint8_t* tlc5940_buf_bottom = &(tlc5940_buf[0]);
-  uint16_t intensity_a, intensity_b_shifted;
-  while(tlc5940_buf_ptr != tlc5940_buf_bottom) {
-    intensity_a = (display_mem_ptr < display_mem_ptr_top) ? dimmer_values[*display_mem_ptr] : 0x0000;
-    display_mem_ptr++;
-    intensity_b_shifted = (display_mem_ptr < display_mem_ptr_top) ? (dimmer_values[*display_mem_ptr] << 4) : 0x0000;
-    display_mem_ptr++;
-    tlc5940_buf_ptr--;
-    *tlc5940_buf_ptr = low8(intensity_a);
-    tlc5940_buf_ptr--;
-    *tlc5940_buf_ptr = high8(intensity_a) | low8(intensity_b_shifted);
-    tlc5940_buf_ptr--;
-    *tlc5940_buf_ptr = high8(intensity_b_shifted);
-  }
-
-  /* Send the data to the TLCs. On an 8x8 cube with 4 TLCs, this takes 130 microseconds. */
-  SPI.beginTransaction(SPISettings(30000000, MSBFIRST, SPI_MODE0));
-  SPI.transfer(tlc5940_buf, 24*SIZE_TLC5940);
-  SPI.endTransaction();
+  send_data_to_tlc();
   pin_low(DIAG_PORT, DIAG_PIN);
+}
+
+/* Send data for layer 'z' - one higher than what we're displaying.
+ *  
+ * Timing experience, all for 8x8x8 cube using 4 TLCs, in microseconds:
+ *                                            buffer fill    sending    total
+ * Original code (using PROGMEM):              385             135       520
+ * Using SRAM instead of PROGMEM:              350             135       485
+ * Without the upfront memset:                 320             135       355
+ * Direct pointer arithmetic in C:             134             135       269
+ * Bufferless-sending in C:                                              211
+ */
+static void send_data_to_tlc() {
+  SPI.beginTransaction(SPISettings(30000000, MSBFIRST, SPI_MODE0));
+  uint8_t* display_mem_ptr = &(display_mem[z+1][0][0]);
+  uint8_t  skip_led_count = 16*SIZE_TLC5940 - SIZE_X*SIZE_Y;
+  uint8_t  tlc_triple_count = 8*SIZE_TLC5940;
+  uint16_t intensity_a_shifted, intensity_b;
+  while(tlc_triple_count-- > 0) {
+    if(skip_led_count == 0) {
+      // triple contains 2 leds
+      intensity_a_shifted = dimmer_values[*(--display_mem_ptr)] << 4;
+      SPI.transfer(high8(intensity_a_shifted));
+      intensity_b = dimmer_values[*(--display_mem_ptr)];
+      SPI.transfer(low8(intensity_a_shifted) | high8(intensity_b));
+      SPI.transfer(low8(intensity_b));
+    } else {
+      // triple contains 1 or 0 leds
+      SPI.transfer(0);
+      skip_led_count--;
+      if(skip_led_count == 0) {
+        // triple contains 1 led
+        intensity_b = dimmer_values[*(--display_mem_ptr)];
+        SPI.transfer(high8(intensity_b));
+        SPI.transfer(low8(intensity_b));
+      } else {
+        // triple contains 0 leds
+        skip_led_count--;
+        SPI.transfer(0);
+        SPI.transfer(0);
+      }
+    }
+  }
+  SPI.endTransaction();
+}
+inline static void xtransfer(uint8_t data) {
+  while (!(SPSR & _BV(SPIF))) ; // wait
+  SPDR = data;
 }
 
 void loop() {
