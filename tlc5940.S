@@ -16,6 +16,17 @@
 #include <avr/io.h>
 #include "cube_sizes.h"
 
+    .macro      spi_send_byte_nowait b:req
+    OUT         _SFR_IO_ADDR(SPDR), \b    
+    .endm
+
+    .macro      spi_send_waitcomplete b:req
+spi_send_waitcomplete_\@:
+    IN          \b,  _SFR_IO_ADDR(SPSR)
+    SBRS        \b,  SPIF
+    RJMP        spi_send_waitcomplete_\@   
+    .endm
+    
     .section    .text
 /*    
  *     Send a single byte over SPI.
@@ -24,10 +35,7 @@
  */
     .global     spi_send_byte
 spi_send_byte:
-    OUT         _SFR_IO_ADDR(SPDR), R24
-wait_transmit:
-    IN          R24,  _SFR_IO_ADDR(SPSR)
-    SBRS        R24,  SPIF
-    RJMP        wait_transmit   
+    spi_send_byte_nowait R24
+    spi_send_waitcomplete R24
     RET
     .end
