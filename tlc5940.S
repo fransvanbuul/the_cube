@@ -58,7 +58,8 @@ spi_send_byte:
  * Bufferless-sending in C:                                              211
  * Assembly routine wait calculate-while-wait (dimmersval in SRAM)       140
  * Assembly routine wait calculate-while-wait (dimmersval in progmem)    148
- * Assembly routine wait calculate-while-wait (shifted copy in progmem)  137
+ * Assembly routine wait calculate-while-wait (+shifted copy in progmem) 137
+ * Assembly routine wait calculate-while-wait (+conditional assembly)    133 
  * 
  * Theoretical minimum, taking into account 8 MHz SPI speed:              96     
  *     
@@ -93,7 +94,9 @@ send_data_to_tlc:
     MOVW        X,   R0                 // XH:XL  :=   R1:R0
 
 // Initializing R25 register: equivalent of uint8_t  skip_led_count = 16*SIZE_TLC5940 - SIZE_X*SIZE_Y
+#if (SIZE_X*SIZE_Y) < (SIZE_TLC5940*16)
     LDI         R25, (16*SIZE_TLC5940 - SIZE_X*SIZE_Y)
+#endif
 
 // Initializing R24 register: equivalent of uint8_t  tlc_triple_count = 8*SIZE_TLC5940
     LDI         R24, (8*SIZE_TLC5940) 
@@ -115,8 +118,11 @@ send_data_to_tlc:
         
 // Start sending triples of 3 bytes to TLC5940 array
 send_triples_loop:
+
+#if (SIZE_X*SIZE_Y) < (SIZE_TLC5940*16)
     TST         R25                    // if skip_led_count
     BRNE        one_or_two_leds        //       !=, go to one_or_two_leds
+#endif
 
 two_leds:
     LD          R18, -X                // R18 := *(--display_mem_ptr), intensity of LED
@@ -146,6 +152,8 @@ two_leds:
     
     DEC         R24                    // tlc_triple_count--
     BRNE        send_triples_loop      // loop while tlc_triple_count != 0
+
+#if (SIZE_X*SIZE_Y) < (SIZE_TLC5940*16)
     RJMP        end_send_triples_loop
 
 one_or_two_leds:
@@ -187,6 +195,7 @@ one_led:
     DEC         R24                    // tlc_triple_count--
     BREQ        end_send_triples_loop      // loop while tlc_triple_count != 0
     RJMP        send_triples_loop
+#endif
 
 end_send_triples_loop:
     

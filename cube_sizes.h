@@ -4,7 +4,7 @@
 #define SIZE_X               3
 #define SIZE_Y               3
 #define SIZE_Z               3
-#define SIZE_TLC5940         1
+#define SIZE_TLC5940         4
 
 #if SIZE_TLC5940 < 1
 #error Number of TCL5940s must be at least 1
