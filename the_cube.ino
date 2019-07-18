@@ -92,8 +92,8 @@ void setup() {
    * - Waveform generation mode 0 (normal), we'll clear the counter in the interrupt handler.
    * - No output.
    * - Interrupt on compare with OCR1A; we'll count to PWM_COUNT. Resulting timings:
-   *      - one layer will be displayed for 2048 microseconds. We need about 280 microseconds
-   *        to do the display work, leaving about 86% of processing capacity for doing fun stuff
+   *      - one layer will be displayed for 2048 microseconds. We need about 137 microseconds
+   *        to do the display work, leaving about 93% of processing capacity for doing fun stuff
    *      - refresh frequency for the entire cube will be 61 Hz, which is still nice.
    */
   TCNT1  = 0;
