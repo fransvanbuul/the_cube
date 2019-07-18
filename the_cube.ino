@@ -13,10 +13,10 @@
 #include <Wire.h>
 
 #include "cube_shared.h"
-#include "pwm_dimmer.h"
 #include "cube_wiring.h"
 
 extern void spi_send_byte(uint8_t) __asm__("spi_send_byte");
+extern void send_data_to_tlc() __asm__("send_data_to_tlc");
 
 uint8_t display_mem[SIZE_Z][SIZE_Y][SIZE_X];  
 MPU6050 mpu6050(Wire);
@@ -68,7 +68,8 @@ void setup() {
   /* Enabling SPI for the TLC5940 */
   pinMode(MOSI, OUTPUT);
   pinMode(SCK, OUTPUT);
-  SPCR = _BV(SPE) | _BV(MSTR) | _BV(SPI2X);
+  SPCR = _BV(SPE) | _BV(MSTR);
+  SPSR |= _BV(SPI2X);
 
   /* Loading the TLC5940 Dot Correction registers with all ones to enable maximum current.
    * With a 2k Iref resistor, this will give us 19,6 mA. */
@@ -131,7 +132,7 @@ void setup() {
   Serial.println();
 }
 
-static uint8_t z = 0;
+volatile uint8_t z = 0;
 
 ISR(TIMER1_COMPA_vect) {
   
@@ -158,50 +159,6 @@ ISR(TIMER1_COMPA_vect) {
   pin_high(DIAG_PORT, DIAG_PIN);
   send_data_to_tlc();
   pin_low(DIAG_PORT, DIAG_PIN);
-}
-
-/* Send data for layer 'z' - one higher than what we're displaying.
- *  
- * Timing experience, all for 8x8x8 cube using 4 TLCs, in microseconds:
- *                                            buffer fill    sending    total
- * Original code (using PROGMEM):              385             135       520
- * Using SRAM instead of PROGMEM:              350             135       485
- * Without the upfront memset:                 320             135       355
- * Direct pointer arithmetic in C:             134             135       269
- * Bufferless-sending in C:                                              211
- * 
- * Theoretical minimum, taking into account 8 MHz SPI speed:              96
- */
-static void send_data_to_tlc() {
-  uint8_t* display_mem_ptr = &(display_mem[z+1][0][0]);
-  uint8_t  skip_led_count = 16*SIZE_TLC5940 - SIZE_X*SIZE_Y;
-  uint8_t  tlc_triple_count = 8*SIZE_TLC5940;
-  uint16_t intensity_a_shifted, intensity_b;
-  while(tlc_triple_count-- > 0) {
-    if(skip_led_count == 0) {
-      // triple contains 2 leds
-      intensity_a_shifted = dimmer_values[*(--display_mem_ptr)] << 4;
-      spi_send_byte(high8(intensity_a_shifted));
-      intensity_b = dimmer_values[*(--display_mem_ptr)];
-      spi_send_byte(low8(intensity_a_shifted) | high8(intensity_b));
-      spi_send_byte(low8(intensity_b));
-    } else {
-      // triple contains 1 or 0 leds
-      spi_send_byte(0);
-      skip_led_count--;
-      if(skip_led_count == 0) {
-        // triple contains 1 led
-        intensity_b = dimmer_values[*(--display_mem_ptr)];
-        spi_send_byte(high8(intensity_b));
-        spi_send_byte(low8(intensity_b));
-      } else {
-        // triple contains 0 leds
-        skip_led_count--;
-        spi_send_byte(0);
-        spi_send_byte(0);
-      }
-    }
-  }
 }
 
 void loop() {
